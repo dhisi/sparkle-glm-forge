@@ -1,9 +1,9 @@
 /**
- * The only text engine in this app: Agnes AI (OpenAI-compatible gateway).
+ * The only text engine in this app: Z.ai GLM (OpenAI-compatible API).
  *
  * Rules baked in here:
- *  - ONE model only (`AGNES_MODEL`, default `agnes-2.5-flash` — the newest,
- *    strongest free Agnes text model as of September 2026).
+ *  - ONE model only (`ZAI_MODEL`, default `glm-4.7-flash` — the newest,
+ *    strongest free Z.ai text model as of September 2026).
  *  - Requests are queued: one call in flight at a time, with a small gap so
  *    the account's rate limit is never raced.
  *  - The key lives only in the server environment; it is never sent to the
@@ -12,16 +12,16 @@
 
 import { assertActive, killableSignal, KilledError } from "./kill-switch.server";
 
-const API = "https://apihub.agnes-ai.com/v1/chat/completions";
+const API = "https://api.z.ai/api/paas/v4/chat/completions";
 
-/** Fixed model. Override with the AGNES_MODEL secret if the id changes. */
+/** Fixed model. Override with the ZAI_MODEL secret if the id changes. */
 export function model(): string {
-  return process.env["AGNES_MODEL"]?.trim() || "agnes-2.5-flash";
+  return process.env["ZAI_MODEL"]?.trim() || "glm-4.7-flash";
 }
 
 function apiKey(): string {
-  const key = process.env["AGNES_API_KEY"]?.trim();
-  if (!key) throw new Error("Missing AGNES_API_KEY (Agnes AI key)");
+  const key = process.env["ZAI_API_KEY"]?.trim();
+  if (!key) throw new Error("Missing ZAI_API_KEY (Z.ai key)");
   return key;
 }
 
@@ -92,7 +92,7 @@ async function waitForSlot(): Promise<void> {
     const now = Date.now();
     const wait = Math.max(blockedUntil - now, lastStart + MIN_GAP_MS - now);
     if (wait <= 0) break;
-    console.log(`[agnes] holding ${Math.round(wait / 1000)}s (shared cool-down)`);
+    console.log(`[zai] holding ${Math.round(wait / 1000)}s (shared cool-down)`);
     await backoff(Math.min(wait, 10_000));
   }
   lastStart = Date.now();
@@ -133,12 +133,12 @@ export type ChatOptions = {
 };
 
 /** One text completion. Concurrent visitors are served in parallel. */
-export function agnesChat(user: string, opts: ChatOptions = {}): Promise<string> {
-  return callAgnes(user, opts);
+export function zaiChat(user: string, opts: ChatOptions = {}): Promise<string> {
+  return callZai(user, opts);
 }
 
 
-async function callAgnes(user: string, opts: ChatOptions): Promise<string> {
+async function callZai(user: string, opts: ChatOptions): Promise<string> {
   await acquireSlot();
   try {
     const attempts = opts.attempts ?? 8;
@@ -152,7 +152,7 @@ async function callAgnes(user: string, opts: ChatOptions): Promise<string> {
       // never triggers the provider's edge rate limit in the first place.
       await waitForSlot();
       console.log(
-        `[agnes] request attempt ${attempt + 1}/${attempts} model=${model()} inChars=${user.length} maxOut=${Math.min(MAX_OUT, opts.maxOutputTokens ?? 16_000)}`,
+        `[zai] request attempt ${attempt + 1}/${attempts} model=${model()} inChars=${user.length} maxOut=${Math.min(MAX_OUT, opts.maxOutputTokens ?? 16_000)}`,
       );
       // Generous by design: a long answer may legitimately stream for an hour.
       const gate = killableSignal(opts.timeoutMs ?? 3_600_000);
@@ -178,7 +178,7 @@ async function callAgnes(user: string, opts: ChatOptions): Promise<string> {
           // The model is a reasoning model by default: its hidden thinking eats
           // the whole answer budget and the reply comes back EMPTY, which used
           // to look like the app hanging on "reading script". Thinking off.
-          reasoning_effort: "none",
+          thinking: { type: "disabled" },
 
           // STREAMING IS REQUIRED for long answers: a buffered request that
           // sends no bytes for ~2 minutes is severed by the hosting platform.
@@ -189,7 +189,7 @@ async function callAgnes(user: string, opts: ChatOptions): Promise<string> {
         if (res.ok) {
           const { text, err } = await readStream(res);
           console.log(
-            `[agnes] attempt ${attempt + 1} ok=200 outChars=${text.length} in ${Date.now() - started}ms${err ? ` streamError=${JSON.stringify(err).slice(0, 200)}` : ""}`,
+            `[zai] attempt ${attempt + 1} ok=200 outChars=${text.length} in ${Date.now() - started}ms${err ? ` streamError=${JSON.stringify(err).slice(0, 200)}` : ""}`,
           );
           if (text) return text;
           lastErr = err
@@ -202,7 +202,7 @@ async function callAgnes(user: string, opts: ChatOptions): Promise<string> {
         const body = (await res.text().catch(() => "")).slice(0, 600);
         lastErr = `${res.status} ${body}`;
         console.error(
-          `[agnes] attempt ${attempt + 1} HTTP ${res.status} in ${Date.now() - started}ms: ${body.slice(0, 300)}`,
+          `[zai] attempt ${attempt + 1} HTTP ${res.status} in ${Date.now() - started}ms: ${body.slice(0, 300)}`,
         );
 
 
@@ -221,7 +221,7 @@ async function callAgnes(user: string, opts: ChatOptions): Promise<string> {
             // the same block and extending it.
             blockedUntil = Math.max(blockedUntil, Date.now() + wait);
             console.error(
-              `[agnes] rate limited (${res.status}) — all requests paused for ${Math.round(wait / 1000)}s`,
+              `[zai] rate limited (${res.status}) — all requests paused for ${Math.round(wait / 1000)}s`,
             );
           }
           if (attempt + 1 < attempts) {
@@ -235,7 +235,7 @@ async function callAgnes(user: string, opts: ChatOptions): Promise<string> {
       } catch (e) {
         if (e instanceof KilledError) throw e;
         lastErr = e instanceof Error ? e.message : String(e);
-        console.error(`[agnes] attempt ${attempt + 1} threw after ${Date.now() - started}ms: ${lastErr}`);
+        console.error(`[zai] attempt ${attempt + 1} threw after ${Date.now() - started}ms: ${lastErr}`);
         assertActive();
         await backoff(1_000 * (attempt + 1));
       } finally {
@@ -243,7 +243,7 @@ async function callAgnes(user: string, opts: ChatOptions): Promise<string> {
       }
     }
 
-    throw new Error(`Agnes request failed: ${lastErr}`);
+    throw new Error(`Z.ai request failed: ${lastErr}`);
   } finally {
     releaseSlot();
   }
