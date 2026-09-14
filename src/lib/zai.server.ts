@@ -40,6 +40,10 @@ const MAX_RETRY_DELAY_MS = 60_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Random spread so retries never line up into a new burst. */
+const jitter = (ms: number) => Math.round(ms * (0.75 + Math.random() * 0.5));
+
+
 /**
  * Shared cool-down. A 429 / Cloudflare 1015 is an edge block on the whole
  * account, not on one request, so EVERY caller waits it out instead of each
