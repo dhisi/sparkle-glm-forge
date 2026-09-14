@@ -207,15 +207,20 @@ async function callZai(user: string, opts: ChatOptions): Promise<string> {
 
 
         if (busy(res.status, body)) {
-          // 1015 is an edge/IP burst block, independent of the account's shown
-          // quota. Retrying every 45 seconds kept extending that block. Give it
-          // a real bounded cooldown and never sleep after the final attempt.
-          const rateLimited = res.status === 429 || /1015/.test(body);
+          // Z.ai answers a momentary capacity shortage on the free tier with
+          // HTTP 429 + code 1305 ("temporarily overloaded"). That is NOT a
+          // quota block: retrying a few seconds later succeeds, so it must not
+          // freeze every other caller for a minute. Only a real rate-limit
+          // block (1015 / an explicit rate-limit message) pauses everyone.
+          const overloaded = /\b1305\b|temporarily overloaded/i.test(body);
+          const rateLimited =
+            !overloaded && (/1015/.test(body) || /rate limit|too many requests/i.test(body));
           const retryAfter = Number(res.headers.get("retry-after") ?? 0);
           const base = rateLimited
             ? Math.min(MAX_RETRY_DELAY_MS, 60_000 * 2 ** attempt)
-            : 3_000 * (attempt + 1);
+            : Math.min(20_000, 2_000 * (attempt + 1));
           const wait = retryAfter > 0 ? Math.max(retryAfter * 1000 + 500, base) : base;
+
           if (rateLimited) {
             // Every other caller waits this out too, instead of each one hitting
             // the same block and extending it.
