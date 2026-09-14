@@ -59,8 +59,8 @@ export const ANATOMY_GUARD =
   "anatomically correct bodies, one head, two arms and two legs per person, every figure a complete separate body with its own clothing, clearly spaced apart, never fused, merged, overlapping into one another or duplicated";
 
 /**
- * Every text call in the app goes through Agnes AI (agnes-2.5-flash)
- * (see agnes.server.ts): one request at a time, with an automatic retry on
+ * Every text call in the app goes through Z.ai GLM (glm-4.7-flash)
+ * (see zai.server.ts): one request at a time, with an automatic retry on
  * the next key when a daily free-model quota runs out. No other provider is
  * used anywhere in this app.
  */
@@ -183,7 +183,7 @@ export async function buildCharacterBible(script: string): Promise<string> {
     "thin wiry build, faded grey school shirt with frayed collar, small scar above left eyebrow. " +
     "No headings, no numbering, no extra commentary.";
 
-  // A server function cannot pass Agnes' streamed bytes through to the browser;
+  // A server function cannot pass Z.ai' streamed bytes through to the browser;
   // the published request therefore looks idle until the whole answer is ready.
   // Keep the call bounded, while sampling the whole story so characters first
   // introduced late are still represented.

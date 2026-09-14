@@ -1,8 +1,8 @@
 /**
- * The ONLY text engine in this app: Agnes AI (agnes-2.5-flash).
+ * The ONLY text engine in this app: Z.ai GLM (glm-4.7-flash, free tier).
  */
 
-import { agnesChat } from "./agnes.server";
+import { zaiChat } from "./zai.server";
 
 export async function textChat(
   system: string,
@@ -14,5 +14,5 @@ export async function textChat(
     attempts?: number;
   } = {},
 ): Promise<string> {
-  return agnesChat(user, { system, ...opts });
+  return zaiChat(user, { system, ...opts });
 }

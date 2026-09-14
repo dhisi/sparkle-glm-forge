@@ -2,8 +2,8 @@
  * API key pools.
  *
  * Image keys (Pixazo) are used in parallel — THREE renders per key at once, so
- * ten keys give thirty images in parallel and never more. The text key (Agnes AI)
- * is read directly from the environment in agnes.server.ts.
+ * ten keys give thirty images in parallel and never more. The text key (Z.ai AI)
+ * is read directly from the environment in zai.server.ts.
  */
 
 /** How many image keys the pool may hold. */

@@ -588,7 +588,7 @@ function Index() {
       // because the text engine uses a single key at a time.
       // Stage 2 drains a shared queue as soon as prompts land. Prompt requests
       // use a heartbeat stream, so the published connection stays active while
-      // Agnes writes each full 120-line answer.
+      // Z.ai writes each full 120-line answer.
       const needPrompts = pending.filter((s) => !hasPrompt(s.prompt));
       // Batches follow the TIMESTAMPS themselves: PROMPT_RANGE (20) consecutive
       // timestamps per pass, never scattered line numbers spanning a wide range.

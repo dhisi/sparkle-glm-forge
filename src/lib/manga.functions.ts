@@ -3,7 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { parseScript } from "./script";
 import { buildCharacterBible, writePrompts, renderPanel } from "./manga.server";
-import { engineStatus } from "./agnes.server";
+import { engineStatus } from "./zai.server";
 import { withRun, KilledError } from "./kill-switch.server";
 
 const SegmentSchema = z.object({

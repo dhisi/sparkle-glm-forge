@@ -78,7 +78,7 @@ export const Route = createFileRoute("/api/prompts")({
             };
 
             // Flush response headers immediately, then keep the published
-            // connection active while Agnes streams its long answer upstream.
+            // connection active while Z.ai streams its long answer upstream.
             send("started", { from: input.from, to: input.to });
             heartbeat = setInterval(() => send("heartbeat", { at: Date.now() }), 10_000);
 
