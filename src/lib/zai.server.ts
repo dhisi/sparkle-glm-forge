@@ -40,6 +40,10 @@ const MAX_RETRY_DELAY_MS = 60_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Random spread so retries never line up into a new burst. */
+const jitter = (ms: number) => Math.round(ms * (0.75 + Math.random() * 0.5));
+
+
 /**
  * Shared cool-down. A 429 / Cloudflare 1015 is an edge block on the whole
  * account, not on one request, so EVERY caller waits it out instead of each
@@ -141,7 +145,10 @@ export function zaiChat(user: string, opts: ChatOptions = {}): Promise<string> {
 async function callZai(user: string, opts: ChatOptions): Promise<string> {
   await acquireSlot();
   try {
-    const attempts = opts.attempts ?? 8;
+    // The free model is shared capacity: a short overload is normal and clears
+    // on its own, so patience beats failing the panel.
+    const attempts = opts.attempts ?? 14;
+
     let lastErr = "";
 
     for (let attempt = 0; attempt < attempts; attempt++) {
@@ -209,31 +216,31 @@ async function callZai(user: string, opts: ChatOptions): Promise<string> {
         if (busy(res.status, body)) {
           // Z.ai answers a momentary capacity shortage on the free tier with
           // HTTP 429 + code 1305 ("temporarily overloaded"). That is NOT a
-          // quota block: retrying a few seconds later succeeds, so it must not
-          // freeze every other caller for a minute. Only a real rate-limit
-          // block (1015 / an explicit rate-limit message) pauses everyone.
+          // quota block: retrying a few seconds later succeeds. A real
+          // rate-limit block (1015) pauses everyone for much longer.
           const overloaded = /\b1305\b|temporarily overloaded/i.test(body);
           const rateLimited =
             !overloaded && (/1015/.test(body) || /rate limit|too many requests/i.test(body));
           const retryAfter = Number(res.headers.get("retry-after") ?? 0);
           const base = rateLimited
             ? Math.min(MAX_RETRY_DELAY_MS, 60_000 * 2 ** attempt)
-            : Math.min(20_000, 2_000 * (attempt + 1));
-          const wait = retryAfter > 0 ? Math.max(retryAfter * 1000 + 500, base) : base;
+            : Math.min(30_000, 3_000 * 2 ** Math.min(attempt, 3));
+          const wait = jitter(
+            retryAfter > 0 ? Math.max(retryAfter * 1000 + 500, base) : base,
+          );
 
-          if (rateLimited) {
-            // Every other caller waits this out too, instead of each one hitting
-            // the same block and extending it.
-            blockedUntil = Math.max(blockedUntil, Date.now() + wait);
-            console.error(
-              `[zai] rate limited (${res.status}) — all requests paused for ${Math.round(wait / 1000)}s`,
-            );
-          }
+          // Both cases hold back EVERY caller in this process, so parallel
+          // panels stop marching into the same wall and deepening the block.
+          blockedUntil = Math.max(blockedUntil, Date.now() + wait);
+          console.error(
+            `[zai] ${rateLimited ? "rate limited" : "overloaded"} (${res.status}) — all requests paused for ${Math.round(wait / 1000)}s`,
+          );
           if (attempt + 1 < attempts) {
             await backoff(wait);
           }
           continue;
         }
+
 
         if (res.status === 400 || res.status === 401 || res.status === 403) break;
         await backoff(1_200 * (attempt + 1));
