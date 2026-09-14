@@ -657,6 +657,50 @@ function Index() {
         text: s.text,
       }));
 
+      /**
+       * One prompt request, retried patiently. A momentary "busy / rate
+       * limited" answer from the writer is NOT a failed timestamp: waiting it
+       * out and asking again is what actually produces the prompt, instead of
+       * leaving the line blank.
+       */
+      const askPrompts = async (
+        from: number,
+        to: number,
+        lines: number[],
+        label: string,
+      ): Promise<string[]> => {
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 8 && !cancelRef.current; attempt++) {
+          if (attempt > 0) {
+            const why = lastErr instanceof Error ? lastErr.message : "";
+            const limited = /rate limit|busy|1015|429|too many|overload/i.test(why);
+            const wait = limited ? Math.min(180_000, 45_000 * attempt) : 3_000 * attempt;
+            setNote(
+              `${limited ? `Writer is busy — waiting ${Math.round(wait / 1000)}s` : "Retrying"} — ${label} (try ${attempt + 1})`,
+            );
+            await new Promise((r) => setTimeout(r, wait));
+            if (cancelRef.current) break;
+          }
+          try {
+            const res = (await getPrompts({
+              bible: b,
+              from,
+              to,
+              lines,
+              segments: allSegments,
+            })) as { prompts: string[] };
+            // An answer that came back completely empty means the writer was
+            // blocked, not that these lines are undrawable: keep retrying.
+            if (res.prompts.some((p) => hasPrompt(p))) return res.prompts;
+            lastErr = new Error("writer busy: empty answer");
+          } catch (e) {
+            lastErr = e;
+            logFailure("prompts", `${label}: try ${attempt + 1} failed`, e);
+          }
+        }
+        throw lastErr ?? new Error("prompt missing");
+      };
+
       const promptStage = (async () => {
         console.log(
           `[client] prompt stage: ${ranges.length} ranges for ${needPrompts.length} lines of ${total}`,
