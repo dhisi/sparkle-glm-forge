@@ -145,7 +145,10 @@ export function zaiChat(user: string, opts: ChatOptions = {}): Promise<string> {
 async function callZai(user: string, opts: ChatOptions): Promise<string> {
   await acquireSlot();
   try {
-    const attempts = opts.attempts ?? 8;
+    // The free model is shared capacity: a short overload is normal and clears
+    // on its own, so patience beats failing the panel.
+    const attempts = opts.attempts ?? 14;
+
     let lastErr = "";
 
     for (let attempt = 0; attempt < attempts; attempt++) {
