@@ -777,13 +777,9 @@ function Index() {
             if (first === undefined || last === undefined) continue;
             group.forEach((s) => record(s.index, { status: "prompting", error: undefined }));
             try {
-              const res = await getPrompts({
-                bible: b,
-                from: first,
-                to: last,
-                lines,
-                segments: allSegments,
-              });
+              const res = {
+                prompts: await askPrompts(first, last, lines, `repair ${first}-${last}`),
+              };
               group.forEach((s, index) => {
                 const slot = (res.prompts as string[])[index];
                 if (hasPrompt(slot)) {
