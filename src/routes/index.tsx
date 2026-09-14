@@ -609,7 +609,7 @@ function Index() {
       }
 
       let promptDone = total - needPrompts.length;
-      let drawn = list.filter((s) => s.status === "done").length;
+      let drawn = list.filter((s) => !!s.url).length;
       let lastTick = 0;
       const tick = (force = false) => {
         const now = Date.now();
@@ -961,7 +961,7 @@ function Index() {
             inFlight--;
           }
           // Count finished panels only — re-queued jobs must not inflate it.
-          drawn = list.filter((s) => s.status === "done").length;
+          drawn = list.filter((s) => !!s.url).length;
           console.log(
             `[client] worker ${me} batch done in ${Date.now() - batchStart}ms · panels ${drawn}/${total} · queue=${queue.length}`,
           );
