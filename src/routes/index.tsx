@@ -475,7 +475,10 @@ function Index() {
     };
   }, []);
 
-  const doneCount = shots.filter((s) => s.status === "done").length;
+  // A panel counts as finished when it HAS a picture. Counting the status
+  // instead left panels that were drawn during an interrupted/resumed run out
+  // of the total, which is why the counter stopped just short of the full set.
+  const doneCount = shots.filter((s) => !!s.url).length;
   // Anything without a picture can be retried — not just panels that ended in
   // an explicit error state.
   const failed = useMemo(() => shots.filter((s) => !s.url), [shots]);
