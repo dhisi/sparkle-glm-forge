@@ -719,42 +719,12 @@ function Index() {
             // pause) instead of dumping its timestamps into the slow
             // one-line-at-a-time repair, which is what made a long script
             // take days.
-            let res: { prompts: string[] } | undefined;
-            let lastErr: unknown;
-            for (let attempt = 0; attempt < 8 && !cancelRef.current; attempt++) {
-              if (attempt > 0) {
-                const why = lastErr instanceof Error ? lastErr.message : "";
-                const limited = /rate limit|busy|1015|429|too many/i.test(why);
-                // A 1015 block clears on its own clock: waiting longer (and
-                // growing the wait) is what actually gets the range written,
-                // while a short retry only extends the block.
-                const wait = limited ? Math.min(180_000, 45_000 * attempt) : 3_000 * attempt;
-                setNote(
-                  `${limited ? `Writer is rate limited — waiting ${Math.round(wait / 1000)}s` : "Retrying"} — timestamps ${range.from}-${range.to} (try ${attempt + 1})`,
-                );
-                await new Promise((r) => setTimeout(r, wait));
-                if (cancelRef.current) break;
-              }
-              try {
-                res = (await getPrompts({
-                  bible: b,
-                  from: range.from,
-                  to: range.to,
-                  lines: wanted,
-                  segments: allSegments,
-                })) as { prompts: string[] };
-                break;
-              } catch (e) {
-                lastErr = e;
-                logFailure(
-                  "prompts",
-                  `Timestamps ${range.from}-${range.to}: try ${attempt + 1} failed`,
-                  e,
-                );
-              }
-            }
-            if (!res) throw lastErr ?? new Error("prompt missing");
-            const prompts = res.prompts;
+            const prompts = await askPrompts(
+              range.from,
+              range.to,
+              wanted,
+              `timestamps ${range.from}-${range.to}`,
+            );
             targets.forEach((s, position) => {
               // Slot-aligned: prompts[i] belongs to this exact requested
               // timestamp. An empty slot stays empty (never inherits a
