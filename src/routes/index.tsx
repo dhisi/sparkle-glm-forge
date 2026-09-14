@@ -475,7 +475,10 @@ function Index() {
     };
   }, []);
 
-  const doneCount = shots.filter((s) => s.status === "done").length;
+  // A panel counts as finished when it HAS a picture. Counting the status
+  // instead left panels that were drawn during an interrupted/resumed run out
+  // of the total, which is why the counter stopped just short of the full set.
+  const doneCount = shots.filter((s) => !!s.url).length;
   // Anything without a picture can be retried — not just panels that ended in
   // an explicit error state.
   const failed = useMemo(() => shots.filter((s) => !s.url), [shots]);
@@ -606,7 +609,7 @@ function Index() {
       }
 
       let promptDone = total - needPrompts.length;
-      let drawn = list.filter((s) => s.status === "done").length;
+      let drawn = list.filter((s) => !!s.url).length;
       let lastTick = 0;
       const tick = (force = false) => {
         const now = Date.now();
@@ -654,6 +657,50 @@ function Index() {
         text: s.text,
       }));
 
+      /**
+       * One prompt request, retried patiently. A momentary "busy / rate
+       * limited" answer from the writer is NOT a failed timestamp: waiting it
+       * out and asking again is what actually produces the prompt, instead of
+       * leaving the line blank.
+       */
+      const askPrompts = async (
+        from: number,
+        to: number,
+        lines: number[],
+        label: string,
+      ): Promise<string[]> => {
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 8 && !cancelRef.current; attempt++) {
+          if (attempt > 0) {
+            const why = lastErr instanceof Error ? lastErr.message : "";
+            const limited = /rate limit|busy|1015|429|too many|overload/i.test(why);
+            const wait = limited ? Math.min(180_000, 45_000 * attempt) : 3_000 * attempt;
+            setNote(
+              `${limited ? `Writer is busy — waiting ${Math.round(wait / 1000)}s` : "Retrying"} — ${label} (try ${attempt + 1})`,
+            );
+            await new Promise((r) => setTimeout(r, wait));
+            if (cancelRef.current) break;
+          }
+          try {
+            const res = (await getPrompts({
+              bible: b,
+              from,
+              to,
+              lines,
+              segments: allSegments,
+            })) as { prompts: string[] };
+            // An answer that came back completely empty means the writer was
+            // blocked, not that these lines are undrawable: keep retrying.
+            if (res.prompts.some((p) => hasPrompt(p))) return res.prompts;
+            lastErr = new Error("writer busy: empty answer");
+          } catch (e) {
+            lastErr = e;
+            logFailure("prompts", `${label}: try ${attempt + 1} failed`, e);
+          }
+        }
+        throw lastErr ?? new Error("prompt missing");
+      };
+
       const promptStage = (async () => {
         console.log(
           `[client] prompt stage: ${ranges.length} ranges for ${needPrompts.length} lines of ${total}`,
@@ -672,42 +719,12 @@ function Index() {
             // pause) instead of dumping its timestamps into the slow
             // one-line-at-a-time repair, which is what made a long script
             // take days.
-            let res: { prompts: string[] } | undefined;
-            let lastErr: unknown;
-            for (let attempt = 0; attempt < 8 && !cancelRef.current; attempt++) {
-              if (attempt > 0) {
-                const why = lastErr instanceof Error ? lastErr.message : "";
-                const limited = /rate limit|busy|1015|429|too many/i.test(why);
-                // A 1015 block clears on its own clock: waiting longer (and
-                // growing the wait) is what actually gets the range written,
-                // while a short retry only extends the block.
-                const wait = limited ? Math.min(180_000, 45_000 * attempt) : 3_000 * attempt;
-                setNote(
-                  `${limited ? `Writer is rate limited — waiting ${Math.round(wait / 1000)}s` : "Retrying"} — timestamps ${range.from}-${range.to} (try ${attempt + 1})`,
-                );
-                await new Promise((r) => setTimeout(r, wait));
-                if (cancelRef.current) break;
-              }
-              try {
-                res = (await getPrompts({
-                  bible: b,
-                  from: range.from,
-                  to: range.to,
-                  lines: wanted,
-                  segments: allSegments,
-                })) as { prompts: string[] };
-                break;
-              } catch (e) {
-                lastErr = e;
-                logFailure(
-                  "prompts",
-                  `Timestamps ${range.from}-${range.to}: try ${attempt + 1} failed`,
-                  e,
-                );
-              }
-            }
-            if (!res) throw lastErr ?? new Error("prompt missing");
-            const prompts = res.prompts;
+            const prompts = await askPrompts(
+              range.from,
+              range.to,
+              wanted,
+              `timestamps ${range.from}-${range.to}`,
+            );
             targets.forEach((s, position) => {
               // Slot-aligned: prompts[i] belongs to this exact requested
               // timestamp. An empty slot stays empty (never inherits a
@@ -760,13 +777,9 @@ function Index() {
             if (first === undefined || last === undefined) continue;
             group.forEach((s) => record(s.index, { status: "prompting", error: undefined }));
             try {
-              const res = await getPrompts({
-                bible: b,
-                from: first,
-                to: last,
-                lines,
-                segments: allSegments,
-              });
+              const res = {
+                prompts: await askPrompts(first, last, lines, `repair ${first}-${last}`),
+              };
               group.forEach((s, index) => {
                 const slot = (res.prompts as string[])[index];
                 if (hasPrompt(slot)) {
@@ -958,7 +971,7 @@ function Index() {
             inFlight--;
           }
           // Count finished panels only — re-queued jobs must not inflate it.
-          drawn = list.filter((s) => s.status === "done").length;
+          drawn = list.filter((s) => !!s.url).length;
           console.log(
             `[client] worker ${me} batch done in ${Date.now() - batchStart}ms · panels ${drawn}/${total} · queue=${queue.length}`,
           );
