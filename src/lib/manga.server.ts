@@ -251,6 +251,9 @@ const PROMPT_SYSTEM =
   "- RICH DETAIL (critical): every prompt is dense with concrete visual detail — at least 4-6 specific drawable things " +
   "in the environment; for each person the posture, hand position, exact expression (eyes, eyebrows, mouth) and " +
   "clothing state. Foreground, midground and background must each have something drawn in them.\n" +
+  "- STAGING & GAZE (critical): write candid in-story staging. State where each person looks — at the other character, at the object they hold, or at what the line says they see — and give each body a three-quarter or profile orientation inside the scene. People are absorbed in the action; nobody poses for the viewer or stares straight out of the frame unless the line itself says they look at us.\n" +
+  "- ALWAYS A SCENE, NEVER A DESIGN: every prompt is one continuous location with a full background — floor, walls or ground, sky or ceiling, and 4-6 props. Never write a reference sheet, model sheet, character design, turnaround, multiple views, a lineup, a floating head, an isolated portrait on a plain backdrop, a duplicated copy of the same character, or an empty blank background.\n" +
+  "- CARRY THE SCENE FORWARD: begin from the place, time of day and cast already established by the previous lines, and say that place explicitly in this prompt even if the line does not repeat it.\n" +
   "- Weave a character's fixed traits INLINE (e.g. 'Henan, a thin 17-year-old boy with messy jet-black hair, sits...'). " +
   "NEVER write a separate character description block, sheet, reference, lineup or 'plus portrait of'.\n" +
   "- CONSISTENCY: when a bible character DOES appear, repeat their bible traits (hair, eyes, clothing colours) using " +
@@ -1440,14 +1443,15 @@ const STYLE_TAIL =
   "hand-painted anime background, fully finished artwork drawn edge to edge";
 
 /**
- * A compact identity anchor that fits in Flux CLIP's strongest opening window.
+ * ONE short identity line per character in frame.
  *
- * The previous full lock was appended after the scene. T5 could still read it,
- * but CLIP had already spent its short window on the action, so a named person
- * was redrawn as a different face, gender or uniform from panel to panel. Keep
- * only concrete visible traits here; the full lock remains later for T5.
+ * The old composition wrote each character twice: a compact "anchor" early and
+ * then the full `characterLock` paragraph ("Appearance lock (identical in every
+ * panel): ...") later. That repetition is what pushed Flux towards reference
+ * sheets and isolated portraits — the prompt read more like a character sheet
+ * than a scene. Now every character is described exactly once, briefly.
  */
-function characterAnchor(prompt: string, bible?: string): string {
+function identityBrief(prompt: string, bible?: string): string {
   if (!bible) return "";
   const matched = parseBible(bible).filter((entry) =>
     new RegExp(`\\b${escapeRe(entry.name)}\\b`, "i").test(prompt),
@@ -1455,9 +1459,22 @@ function characterAnchor(prompt: string, bible?: string): string {
   if (matched.length === 0) return "";
   return matched
     .slice(0, 4)
-    .map((entry) => `${entry.name} always looks exactly like: ${clip(entry.traits, 135)}`)
+    .map((entry) => `${entry.name}: ${clip(entry.traits.replace(/\.$/, ""), 130)}`)
     .join("; ");
 }
+
+/**
+ * Story staging. Flux's default for a described person is a front-facing
+ * portrait looking straight at the viewer, so the intended staging is stated
+ * positively and concretely instead of being left to the model.
+ */
+const STAGING_GUARD =
+  "candid in-story staging: everyone is absorbed in the action, eyes on each other or on the object they are " +
+  "handling, bodies turned into the scene at a three-quarter or profile angle, seen from a natural story camera";
+
+/** Environment requirement — a scene, never a floating figure on blank paper. */
+const BACKGROUND_GUARD =
+  "a complete hand-painted environment fills the whole background with depth, props and scenery behind and around them";
 
 /** Keep the timestamp's decisive place/subject/action sentence at the front. */
 function openingBeat(prompt: string): { lead: string; rest: string } {
@@ -1469,30 +1486,37 @@ function openingBeat(prompt: string): { lead: string; rest: string } {
   };
 }
 
-export function composeImagePrompt(prompt: string, bible?: string, line?: string): string {
+export function composeImagePrompt(
+  prompt: string,
+  bible?: string,
+  line?: string,
+  /** The previous panel's place and cast, carried forward for continuity. */
+  continuity?: string,
+): string {
   const withCast = enforceLineCast(prompt, line, bible);
   const fixed = enforceGender(sanitizePrompt(withCast), bible);
   const peopled = hasPeople(fixed, bible);
   const beat = openingBeat(fixed);
-  const anchor = peopled ? characterAnchor(fixed, bible) : "";
-  // Character lock only matters when someone is actually in frame.
-  const lock = peopled ? clip(characterLock(fixed, bible), LOCK_BUDGET) : "";
+  // Exactly ONE identity description per character, and only when someone is
+  // actually in frame. No second appearance-lock paragraph.
+  const identity = peopled ? clip(identityBrief(fixed, bible), LOCK_BUDGET) : "";
 
-  // The opening now contains BOTH the timestamp's decisive action and compact
-  // immutable identities. Previously the identity lock began after character
-  // ~300, outside CLIP's effective window; changing the seed therefore changed
-  // faces and uniforms even though the later lock text was identical.
+  // Order matters: location and action own Flux CLIP's short opening window,
+  // then continuity, environment, staging — identity comes after the scene is
+  // established, so the picture is a story moment rather than a character study.
   const parts = [
     `${STYLE_LEAD} ${beat.lead}`,
-    anchor,
+    continuity ? clip(`Same continuing scene: ${continuity}`, 200) : "",
     clip(beat.rest, Math.max(120, SCENE_BUDGET - beat.lead.length)),
-    lock,
+    peopled ? STAGING_GUARD : "",
+    identity,
     peopled
       ? "only the described people, each drawn once, whole separate bodies"
       : "empty environment, no people in frame",
+    BACKGROUND_GUARD,
     "natural clear lighting, wordless artwork",
     STYLE_TAIL,
-    "one single 16:9 widescreen frame showing the whole scene",
+    "one single 16:9 widescreen storytelling frame showing the whole scene",
   ].filter(Boolean);
 
   return clip(
@@ -1550,8 +1574,9 @@ export async function generateImage(
   bible?: string,
   attempts = 6,
   line?: string,
+  continuity?: string,
 ): Promise<string> {
-  const body = composeImagePrompt(prompt, bible, line).slice(0, 2000);
+  const body = composeImagePrompt(prompt, bible, line, continuity).slice(0, 2000);
 
   let lastErr = "";
   for (let attempt = 0; attempt < Math.max(1, attempts); attempt++) {
@@ -1667,6 +1692,8 @@ export async function renderPanel(
   bible?: string,
   line?: string,
   timestamp?: string,
+  /** Previous panel's place and cast, so a reroll cannot relocate the scene. */
+  continuity?: string,
 ): Promise<{
   url: string;
   prompt: string;
@@ -1696,7 +1723,7 @@ export async function renderPanel(
   for (let round = 0; round < 3; round++) {
     tries++;
     try {
-      const url = await generateImage(prompt, seed + round * 1861, slot + round, bible, 3, line);
+      const url = await generateImage(prompt, seed + round * 1861, slot + round, bible, 3, line, continuity);
       return { url, prompt, level: 0, tries, rewritten };
     } catch (e) {
       if (e instanceof KilledError) throw e;
@@ -1722,6 +1749,7 @@ export async function renderPanel(
           bible,
           3,
           line,
+          continuity,
         );
         return { url, prompt: softened, level: 1, tries, rewritten };
       } catch (e) {
@@ -1743,7 +1771,7 @@ export async function renderPanel(
     for (let round = 0; round < 3; round++) {
       tries++;
       try {
-        const url = await generateImage(plain, seed + 9109 + round * 613, slot + round, bible, 3, line);
+        const url = await generateImage(plain, seed + 9109 + round * 613, slot + round, bible, 3, line, continuity);
         return { url, prompt: plain, level: 2, tries, rewritten };
       } catch (e) {
         if (e instanceof KilledError) throw e;
