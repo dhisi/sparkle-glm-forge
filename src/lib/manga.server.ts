@@ -251,6 +251,9 @@ const PROMPT_SYSTEM =
   "- RICH DETAIL (critical): every prompt is dense with concrete visual detail — at least 4-6 specific drawable things " +
   "in the environment; for each person the posture, hand position, exact expression (eyes, eyebrows, mouth) and " +
   "clothing state. Foreground, midground and background must each have something drawn in them.\n" +
+  "- STAGING & GAZE (critical): write candid in-story staging. State where each person looks — at the other character, at the object they hold, or at what the line says they see — and give each body a three-quarter or profile orientation inside the scene. People are absorbed in the action; nobody poses for the viewer or stares straight out of the frame unless the line itself says they look at us.\n" +
+  "- ALWAYS A SCENE, NEVER A DESIGN: every prompt is one continuous location with a full background — floor, walls or ground, sky or ceiling, and 4-6 props. Never write a reference sheet, model sheet, character design, turnaround, multiple views, a lineup, a floating head, an isolated portrait on a plain backdrop, a duplicated copy of the same character, or an empty blank background.\n" +
+  "- CARRY THE SCENE FORWARD: begin from the place, time of day and cast already established by the previous lines, and say that place explicitly in this prompt even if the line does not repeat it.\n" +
   "- Weave a character's fixed traits INLINE (e.g. 'Henan, a thin 17-year-old boy with messy jet-black hair, sits...'). " +
   "NEVER write a separate character description block, sheet, reference, lineup or 'plus portrait of'.\n" +
   "- CONSISTENCY: when a bible character DOES appear, repeat their bible traits (hair, eyes, clothing colours) using " +
