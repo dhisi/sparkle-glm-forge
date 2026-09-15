@@ -1571,8 +1571,9 @@ export async function generateImage(
   bible?: string,
   attempts = 6,
   line?: string,
+  continuity?: string,
 ): Promise<string> {
-  const body = composeImagePrompt(prompt, bible, line).slice(0, 2000);
+  const body = composeImagePrompt(prompt, bible, line, continuity).slice(0, 2000);
 
   let lastErr = "";
   for (let attempt = 0; attempt < Math.max(1, attempts); attempt++) {
@@ -1688,6 +1689,8 @@ export async function renderPanel(
   bible?: string,
   line?: string,
   timestamp?: string,
+  /** Previous panel's place and cast, so a reroll cannot relocate the scene. */
+  continuity?: string,
 ): Promise<{
   url: string;
   prompt: string;
@@ -1717,7 +1720,7 @@ export async function renderPanel(
   for (let round = 0; round < 3; round++) {
     tries++;
     try {
-      const url = await generateImage(prompt, seed + round * 1861, slot + round, bible, 3, line);
+      const url = await generateImage(prompt, seed + round * 1861, slot + round, bible, 3, line, continuity);
       return { url, prompt, level: 0, tries, rewritten };
     } catch (e) {
       if (e instanceof KilledError) throw e;
@@ -1743,6 +1746,7 @@ export async function renderPanel(
           bible,
           3,
           line,
+          continuity,
         );
         return { url, prompt: softened, level: 1, tries, rewritten };
       } catch (e) {
@@ -1764,7 +1768,7 @@ export async function renderPanel(
     for (let round = 0; round < 3; round++) {
       tries++;
       try {
-        const url = await generateImage(plain, seed + 9109 + round * 613, slot + round, bible, 3, line);
+        const url = await generateImage(plain, seed + 9109 + round * 613, slot + round, bible, 3, line, continuity);
         return { url, prompt: plain, level: 2, tries, rewritten };
       } catch (e) {
         if (e instanceof KilledError) throw e;
